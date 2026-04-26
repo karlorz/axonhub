@@ -1,0 +1,55 @@
+# AxonHub Coolify Docker Compose Configuration
+#
+# Differences from standard docker-compose.yml:
+# - No custom network definition (Coolify auto-manages networks)
+# - SERVICE_FQDN_* env vars for Traefik reverse proxy routing
+# - No explicit port mappings (Coolify routes via Traefik labels)
+# - No container_name (Coolify auto-generates unique names)
+# - Volumes use Coolify-managed paths
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: axonhub
+      POSTGRES_USER: axonhub
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-axonhub_password}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U axonhub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  axonhub:
+    image: looplj/axonhub:latest
+    environment:
+      SERVICE_FQDN_AXONHUB_8090:
+      AXONHUB_DB_DIALECT: postgres
+      AXONHUB_DB_DSN: postgres://axonhub:${DB_PASSWORD:-axonhub_password}@postgres:5432/axonhub?sslmode=disable
+    volumes:
+      - config-volume:/app/config.yml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://localhost:8090/health",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  postgres_data:
+  config-volume:
