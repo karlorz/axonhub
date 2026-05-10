@@ -315,6 +315,10 @@ func convertToLLMRequest(anthropicReq *MessageRequest) (*llm.Request, error) {
 			if anthropicReq.Thinking.Display != "" {
 				chatReq.TransformerMetadata[TransformerMetadataKeyThinkingDisplay] = anthropicReq.Thinking.Display
 			}
+		case "disabled":
+			// Preserve disabled thinking type so outbound transformers can disable reasoning.
+			chatReq.TransformerMetadata[TransformerMetadataKeyThinkingType] = "disabled"
+			chatReq.ReasoningEffort = "none"
 		case "adaptive":
 			// Adaptive thinking doesn't require a budget; preserve the type marker via TransformerMetadata.
 			chatReq.TransformerMetadata[TransformerMetadataKeyThinkingType] = "adaptive"
@@ -405,15 +409,16 @@ func convertToAnthropicResponse(chatResp *llm.Response) *Message {
 				if thinkingContent == nil {
 					thinkingContent = lo.ToPtr("")
 				}
+
 				thinkingBlock := MessageContentBlock{
 					Type:     "thinking",
 					Thinking: thinkingContent,
 				}
-			if message.ReasoningSignature != nil {
-				thinkingBlock.Signature = message.ReasoningSignature
-			} else {
-				thinkingBlock.Signature = lo.ToPtr(generateSignature())
-			}
+				if message.ReasoningSignature != nil {
+					thinkingBlock.Signature = message.ReasoningSignature
+				} else {
+					thinkingBlock.Signature = lo.ToPtr(generateSignature())
+				}
 
 				contentBlocks = append(contentBlocks, thinkingBlock)
 			}

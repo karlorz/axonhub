@@ -3,6 +3,7 @@ package conf
 import (
 	"context"
 	"encoding"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
@@ -18,6 +19,7 @@ import (
 	"github.com/looplj/axonhub/internal/metrics"
 	"github.com/looplj/axonhub/internal/pkg/xcache"
 	"github.com/looplj/axonhub/internal/server"
+	"github.com/looplj/axonhub/internal/server/biz"
 	"github.com/looplj/axonhub/internal/server/db"
 	"github.com/looplj/axonhub/internal/server/gc"
 )
@@ -32,12 +34,15 @@ type Config struct {
 	GC               gc.Config           `conf:"gc" yaml:"gc" json:"gc"`
 	Cache            xcache.Config       `conf:"cache" yaml:"cache" json:"cache"`
 	ProviderQuota    providerQuotaConfig `conf:"provider_quota" yaml:"provider_quota" json:"provider_quota"`
+	OIDC             biz.OIDCConfig      `conf:"oidc" yaml:"oidc" json:"oidc"`
 	DisableSSLVerify bool                `name:"disable_ssl_verify" yaml:"-" json:"-"`
 	AllowNoAuth      bool                `name:"allow_no_auth" yaml:"-" json:"-"`
+	APIKeyPrefix     string              `name:"api_key_prefix" yaml:"-" json:"-"`
 }
 
 type providerQuotaConfig struct {
-	CheckInterval time.Duration `conf:"check_interval" yaml:"check_interval" json:"check_interval"`
+	CheckInterval             time.Duration `conf:"check_interval" yaml:"check_interval" json:"check_interval"`
+	WarningCheckIntervalRatio int           `conf:"warning_check_interval_ratio" yaml:"warning_check_interval_ratio" json:"warning_check_interval_ratio"`
 }
 
 // Load loads configuration from YAML file and environment variables.
@@ -90,6 +95,7 @@ func Load() (Config, error) {
 
 	config.DisableSSLVerify = config.APIServer.DisableSSLVerify
 	config.AllowNoAuth = config.APIServer.API.Auth.AllowNoAuth
+	config.APIKeyPrefix = config.APIServer.API.Auth.KeyPrefix
 
 	log.Debug(context.Background(), "Config loaded successfully", log.Any("config", config))
 
@@ -122,6 +128,19 @@ func customizedDecodeHook(srcType reflect.Type, dstType reflect.Type, data any) 
 			return time.Duration(0), nil
 		}
 		return time.ParseDuration(str)
+
+	case dstType.Kind() == reflect.Slice || dstType.Kind() == reflect.Map || dstType.Kind() == reflect.Struct:
+		// Attempt to parse as JSON for environment variable support
+		text := strings.TrimSpace(str)
+		if strings.HasPrefix(text, "[") || strings.HasPrefix(text, "{") {
+			var decoded any
+			if err := json.Unmarshal([]byte(text), &decoded); err == nil {
+				return decoded, nil
+			}
+		}
+
+		return data, nil
+
 	default:
 		return data, nil
 	}
@@ -132,6 +151,7 @@ func setDefaults(v *viper.Viper) {
 	// Server defaults
 	v.SetDefault("server.host", "0.0.0.0")
 	v.SetDefault("server.port", 8090)
+	v.SetDefault("server.public_url", "")
 	v.SetDefault("server.name", "AxonHub")
 	v.SetDefault("server.base_path", "")
 	v.SetDefault("server.request_timeout", "30s")
@@ -160,6 +180,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.cors.allow_credentials", false)
 	v.SetDefault("server.cors.max_age", "30m")
 	v.SetDefault("server.api.auth.allow_no_auth", false)
+	v.SetDefault("server.api.auth.key_prefix", "ah")
 
 	// Database defaults
 	v.SetDefault("db.dialect", "sqlite3")
@@ -169,6 +190,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("db.max_idle_conns", 10)
 	v.SetDefault("db.conn_max_lifetime", "30m")
 	v.SetDefault("db.conn_max_idle_time", "10m")
+	v.SetDefault("db.read_replica.read_dsn", "")
+	v.SetDefault("db.read_replica.read_max_open_conns", 0)
+	v.SetDefault("db.read_replica.read_max_idle_conns", 0)
 
 	// Log defaults
 	v.SetDefault("log.name", "axonhub")
@@ -199,7 +223,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("gc.vacuum_full", false)
 
 	// Provider quota defaults
-	v.SetDefault("provider_quota.check_interval", "20m") // Check every 20 minutes
+	v.SetDefault("provider_quota.check_interval", "5m")
+	v.SetDefault("provider_quota.warning_check_interval_ratio", 4) // Warning interval = check_interval * ratio
 
 	// Cache defaults
 	v.SetDefault("cache.mode", "memory")
@@ -212,6 +237,9 @@ func setDefaults(v *viper.Viper) {
 	// Note: cache.redis.db has no default value to allow explicit override to 0
 	v.SetDefault("cache.redis.tls", false)
 	v.SetDefault("cache.redis.tls_insecure_skip_verify", false)
+
+	// OIDC defaults
+	v.SetDefault("oidc.providers", []biz.OIDCProvider{})
 }
 
 // parseLogLevel converts a string log level to zapcore.Level.
