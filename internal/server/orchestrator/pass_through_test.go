@@ -43,7 +43,13 @@ func TestCaptureRawProviderResponse_StoresResponse(t *testing.T) {
 				},
 			},
 		},
-		LlmRequest: &llm.Request{APIFormat: llm.APIFormatOpenAIChatCompletion},
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
 		},
@@ -95,8 +101,15 @@ func TestApplyPassThroughResponse_Enabled_ReturnsRaw(t *testing.T) {
 		},
 	}
 	state := &PersistenceState{
-		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
-		LlmRequest:       &llm.Request{APIFormat: llm.APIFormatOpenAIChatCompletion},
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		OriginalRequestStream: nil,
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
 		},
@@ -195,8 +208,15 @@ func TestApplyPassThroughResponse_UsesRawProviderRequestAPIFormat(t *testing.T) 
 		},
 	}
 	state := &PersistenceState{
-		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
-		LlmRequest:       &llm.Request{APIFormat: llm.APIFormatOpenAIChatCompletion},
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		OriginalRequestStream: nil,
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
 		},
@@ -218,6 +238,158 @@ func TestApplyPassThroughResponse_UsesRawProviderRequestAPIFormat(t *testing.T) 
 	result, err := mw.OnInboundRawResponse(ctx, transformed)
 	require.NoError(t, err)
 	assert.Equal(t, rawResp, result)
+}
+
+func TestIsPassThroughEnabled_DisablesWhenSupportedStreamParameterChanges(t *testing.T) {
+	ctx := context.Background()
+	channel := &biz.Channel{
+		Channel: &ent.Channel{
+			ID:   1,
+			Name: "test",
+			Settings: &objects.ChannelSettings{
+				PassThroughBody: lo.ToPtr(true),
+			},
+		},
+	}
+	state := &PersistenceState{
+		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"my-alias","stream":false,"messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
+		RawProviderRequest: &httpclient.Request{
+			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+		},
+	}
+	outbound := &PersistentOutboundTransformer{state: state}
+
+	assert.False(t, outbound.isPassThroughEnabled(ctx, nil))
+}
+
+func TestIsPassThroughEnabled_DisablesWhenSupportedStreamParameterMissingButStreamingRequested(t *testing.T) {
+	ctx := context.Background()
+	channel := &biz.Channel{
+		Channel: &ent.Channel{
+			ID:   1,
+			Name: "test",
+			Settings: &objects.ChannelSettings{
+				PassThroughBody: lo.ToPtr(true),
+			},
+		},
+	}
+	state := &PersistenceState{
+		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"my-alias","messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
+		RawProviderRequest: &httpclient.Request{
+			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+		},
+	}
+	outbound := &PersistentOutboundTransformer{state: state}
+
+	assert.False(t, outbound.isPassThroughEnabled(ctx, nil))
+}
+
+func TestIsPassThroughEnabled_AllowsNilAndFalseStreamToAlign(t *testing.T) {
+	ctx := context.Background()
+	channel := &biz.Channel{
+		Channel: &ent.Channel{
+			ID:   1,
+			Name: "test",
+			Settings: &objects.ChannelSettings{
+				PassThroughBody: lo.ToPtr(true),
+			},
+		},
+	}
+	state := &PersistenceState{
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		OriginalRequestStream: nil,
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			Stream:    lo.ToPtr(false),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"my-alias","stream":false,"messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
+		RawProviderRequest: &httpclient.Request{
+			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+		},
+	}
+	outbound := &PersistentOutboundTransformer{state: state}
+
+	assert.True(t, outbound.isPassThroughEnabled(ctx, nil))
+}
+
+func TestIsPassThroughEnabled_DisablesWhenRequestStreamSemanticsDoNotMatchCurrentRequirement(t *testing.T) {
+	ctx := context.Background()
+	channel := &biz.Channel{
+		Channel: &ent.Channel{
+			ID:   1,
+			Name: "test",
+			Settings: &objects.ChannelSettings{
+				PassThroughBody: lo.ToPtr(true),
+			},
+		},
+	}
+	state := &PersistenceState{
+		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatGeminiContents,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatGeminiContents),
+				Body:      []byte(`{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}`),
+			},
+		},
+		RawProviderRequest: &httpclient.Request{
+			APIFormat: string(llm.APIFormatGeminiContents),
+		},
+	}
+	outbound := &PersistentOutboundTransformer{state: state}
+
+	assert.False(t, outbound.isPassThroughEnabled(ctx, nil))
+}
+
+func TestIsPassThroughEnabled_DisablesWhenOriginalRequestWasNonStreamingButExecutionIsForcedStreaming(t *testing.T) {
+	ctx := context.Background()
+	channel := &biz.Channel{
+		Channel: &ent.Channel{
+			ID:   1,
+			Name: "test",
+			Settings: &objects.ChannelSettings{
+				PassThroughBody: lo.ToPtr(true),
+			},
+		},
+	}
+	state := &PersistenceState{
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		OriginalRequestStream: lo.ToPtr(false),
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"my-alias","messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
+		RawProviderRequest: &httpclient.Request{
+			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+		},
+	}
+	outbound := &PersistentOutboundTransformer{state: state}
+
+	assert.False(t, outbound.isPassThroughEnabled(ctx, nil))
 }
 
 func TestApplyPassThroughResponse_NilSettings(t *testing.T) {
@@ -301,8 +473,16 @@ func TestCaptureRawProviderStream_FansOut(t *testing.T) {
 		},
 	}
 	state := &PersistenceState{
-		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
-		LlmRequest:       &llm.Request{APIFormat: llm.APIFormatOpenAIChatCompletion},
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		OriginalRequestStream: lo.ToPtr(true),
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
 		},
@@ -369,8 +549,16 @@ func TestCaptureRawProviderStream_PropagatesError(t *testing.T) {
 		},
 	}
 	state := &PersistenceState{
-		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
-		LlmRequest:       &llm.Request{APIFormat: llm.APIFormatOpenAIChatCompletion},
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		OriginalRequestStream: lo.ToPtr(true),
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
 		},
@@ -387,11 +575,64 @@ func TestCaptureRawProviderStream_PropagatesError(t *testing.T) {
 	result, err := mw.OnOutboundRawStream(ctx, src)
 	require.NoError(t, err)
 
-	// Wait for goroutine to finish
-	time.Sleep(50 * time.Millisecond)
+	// Drain the stream until the producer goroutine closes the channel.
+	// The channel close is the happens-before barrier that makes the
+	// goroutine's write to rawStreamErr visible to Err() / RawStreamErrRef.
+	for result.Next() { //nolint:revive // intentional drain
+	}
 
 	assert.Equal(t, errTest, result.Err())
 	assert.Equal(t, errTest, *state.RawStreamErrRef)
+}
+
+func TestCaptureRawProviderStream_CloseStopsBlockedUpstream(t *testing.T) {
+	ctx := context.Background()
+	channel := &biz.Channel{
+		Channel: &ent.Channel{
+			ID:   1,
+			Name: "test",
+			Settings: &objects.ChannelSettings{
+				PassThroughBody: lo.ToPtr(true),
+			},
+		},
+	}
+	state := &PersistenceState{
+		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
+		LlmRequest:       &llm.Request{APIFormat: llm.APIFormatOpenAIChatCompletion},
+		RawProviderRequest: &httpclient.Request{
+			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+		},
+	}
+	outbound := &PersistentOutboundTransformer{
+		wrapped: &mockTransformer{apiFormat: llm.APIFormatOpenAIChatCompletion},
+		state:   state,
+	}
+
+	src := newBlockingStream()
+	mw := captureRawProviderStream(outbound, nil)
+	result, err := mw.OnOutboundRawStream(ctx, src)
+	require.NoError(t, err)
+
+	select {
+	case <-src.started:
+	case <-time.After(time.Second):
+		t.Fatal("upstream stream was not read")
+	}
+
+	require.NoError(t, result.Close())
+
+	select {
+	case <-src.closed:
+	case <-time.After(time.Second):
+		t.Fatal("upstream stream was not closed")
+	}
+
+	select {
+	case _, ok := <-state.RawStreamCh:
+		require.False(t, ok)
+	case <-time.After(time.Second):
+		t.Fatal("pass-through channel was not closed")
+	}
 }
 
 func TestCaptureRawProviderStream_UsesRawProviderRequestAPIFormat(t *testing.T) {
@@ -406,8 +647,16 @@ func TestCaptureRawProviderStream_UsesRawProviderRequestAPIFormat(t *testing.T) 
 		},
 	}
 	state := &PersistenceState{
-		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
-		LlmRequest:       &llm.Request{APIFormat: llm.APIFormatOpenAIChatCompletion},
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		OriginalRequestStream: lo.ToPtr(true),
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
 		},
@@ -435,6 +684,39 @@ func (s *errorStream) Next() bool                       { return false }
 func (s *errorStream) Current() *httpclient.StreamEvent { return nil }
 func (s *errorStream) Err() error                       { return s.err }
 func (s *errorStream) Close() error                     { return nil }
+
+type blockingStream struct {
+	started   chan struct{}
+	closed    chan struct{}
+	startOnce sync.Once
+	closeOnce sync.Once
+}
+
+func newBlockingStream() *blockingStream {
+	return &blockingStream{
+		started: make(chan struct{}),
+		closed:  make(chan struct{}),
+	}
+}
+
+func (s *blockingStream) Next() bool {
+	s.startOnce.Do(func() {
+		close(s.started)
+	})
+	<-s.closed
+
+	return false
+}
+
+func (s *blockingStream) Current() *httpclient.StreamEvent { return nil }
+func (s *blockingStream) Err() error                       { return nil }
+func (s *blockingStream) Close() error {
+	s.closeOnce.Do(func() {
+		close(s.closed)
+	})
+
+	return nil
+}
 
 // === applyPassThroughStream tests ===
 
@@ -493,9 +775,17 @@ func TestApplyPassThroughStream_ReturnsRawEvents(t *testing.T) {
 	}
 	rawCh := make(chan *httpclient.StreamEvent, 8)
 	state := &PersistenceState{
-		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
-		RawStreamCh:      rawCh,
-		LlmRequest:       &llm.Request{APIFormat: llm.APIFormatOpenAIChatCompletion},
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		RawStreamCh:           rawCh,
+		OriginalRequestStream: lo.ToPtr(true),
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
 		},
@@ -546,9 +836,17 @@ func TestApplyPassThroughStream_DrainsInner(t *testing.T) {
 	}
 	rawCh := make(chan *httpclient.StreamEvent, 8)
 	state := &PersistenceState{
-		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
-		RawStreamCh:      rawCh,
-		LlmRequest:       &llm.Request{APIFormat: llm.APIFormatOpenAIChatCompletion},
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		RawStreamCh:           rawCh,
+		OriginalRequestStream: lo.ToPtr(true),
+		LlmRequest: &llm.Request{
+			APIFormat: llm.APIFormatOpenAIChatCompletion,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+				Body:      []byte(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(llm.APIFormatOpenAIChatCompletion),
 		},
@@ -563,10 +861,8 @@ func TestApplyPassThroughStream_DrainsInner(t *testing.T) {
 		done: drained,
 	}
 
-	// Feed raw events and close
 	go func() {
 		rawCh <- &httpclient.StreamEvent{Data: json.RawMessage(`{"id":"r1"}`)}
-
 		close(rawCh)
 	}()
 
@@ -577,7 +873,6 @@ func TestApplyPassThroughStream_DrainsInner(t *testing.T) {
 	for result.Next() {
 	}
 
-	// Wait for drain goroutine
 	select {
 	case <-drained:
 	case <-time.After(2 * time.Second):
@@ -626,6 +921,15 @@ func (m *trackingLLM) OnOutboundLlmStream(ctx context.Context, stream streams.St
 		stream: stream,
 		mw:     m,
 	}, nil
+}
+
+// eventCount returns the current event count under the mutex so tests can
+// safely read it without racing with trackingWrapper.Next.
+func (m *trackingLLM) eventCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.evtCount
 }
 
 type trackingWrapper struct {
@@ -729,8 +1033,16 @@ func TestPassThroughStream_LLMMiddlewareRuns(t *testing.T) {
 	}
 
 	state := &PersistenceState{
-		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
-		LlmRequest:       &llm.Request{APIFormat: format},
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		OriginalRequestStream: lo.ToPtr(true),
+		LlmRequest: &llm.Request{
+			APIFormat: format,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(format),
+				Body:      []byte(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(format),
 		},
@@ -749,44 +1061,39 @@ func TestPassThroughStream_LLMMiddlewareRuns(t *testing.T) {
 	}
 	srcStream := testHTTPStream(rawEvents)
 
-	// Step 1: captureRawProviderStream wraps/fans out srcStream
 	capMw := captureRawProviderStream(outbound, nil)
 	pipelineStream, err := capMw.OnOutboundRawStream(ctx, srcStream)
 	require.NoError(t, err)
 	require.NotNil(t, state.RawStreamCh)
 
-	// Step 2: Outbound TransformStream (raw → llm)
 	llmStream, err := outbound.wrapped.TransformStream(ctx, nil, pipelineStream)
 	require.NoError(t, err)
 
-	// Step 3: tracking middleware wraps LLM stream
 	trackedLLM, err := tracker.OnOutboundLlmStream(ctx, llmStream)
 	require.NoError(t, err)
 	require.True(t, tracker.called, "OnOutboundLlmStream should be called")
 
-	// Step 4: Inbound TransformStream (llm → raw)
 	inbound := &passthroughInbound{format: format}
 	inboundStream, err := inbound.TransformStream(ctx, trackedLLM)
 	require.NoError(t, err)
 
-	// Step 5: applyPassThroughStream drains the transformed stream
 	applyMw := applyPassThroughStream(outbound, nil)
 	result, err := applyMw.OnInboundRawStream(ctx, inboundStream)
 	require.NoError(t, err)
 
-	// Consume passthrough stream
 	var passthroughEvents []*httpclient.StreamEvent
 	for result.Next() {
 		passthroughEvents = append(passthroughEvents, result.Current())
 	}
 
-	// Passthrough client receives raw events
 	require.Len(t, passthroughEvents, 2)
 	assert.Equal(t, rawEvents, passthroughEvents)
 
-	// Wait for drain to complete and tracking to process
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, 2, tracker.evtCount, "tracking middleware should process 2 events")
+	// Wait for the applyPassThroughStream drain goroutine to finish processing.
+	// Polling under the tracker mutex avoids racing with trackingWrapper.Next.
+	require.Eventually(t, func() bool {
+		return tracker.eventCount() == 2
+	}, time.Second, 10*time.Millisecond, "tracking middleware should process 2 events")
 }
 
 func TestPassThroughStream_ErrorPropagates(t *testing.T) {
@@ -804,8 +1111,16 @@ func TestPassThroughStream_ErrorPropagates(t *testing.T) {
 	}
 
 	state := &PersistenceState{
-		CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
-		LlmRequest:       &llm.Request{APIFormat: format},
+		CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+		OriginalRequestStream: lo.ToPtr(true),
+		LlmRequest: &llm.Request{
+			APIFormat: format,
+			Stream:    lo.ToPtr(true),
+			RawRequest: &httpclient.Request{
+				APIFormat: string(format),
+				Body:      []byte(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+			},
+		},
 		RawProviderRequest: &httpclient.Request{
 			APIFormat: string(format),
 		},
@@ -822,8 +1137,11 @@ func TestPassThroughStream_ErrorPropagates(t *testing.T) {
 	result, err := capMw.OnOutboundRawStream(ctx, src)
 	require.NoError(t, err)
 
-	// Wait for fan-out goroutine
-	time.Sleep(50 * time.Millisecond)
+	// Drain the stream until the producer goroutine closes the channel.
+	// The channel close is the happens-before barrier for the goroutine's
+	// write to rawStreamErr.
+	for result.Next() { //nolint:revive // intentional drain
+	}
 
 	assert.Equal(t, errTest, result.Err())
 	assert.Equal(t, errTest, *state.RawStreamErrRef)
@@ -947,6 +1265,88 @@ func TestApplyPassThroughBodyPreservesMappedModelForJinaEmbedding(t *testing.T) 
 	require.Equal(t, "jina-embeddings-v3", gjson.GetBytes(processed.Body, "model").String())
 	require.Equal(t, "retrieval.query", gjson.GetBytes(processed.Body, "task").String())
 	require.Equal(t, "my-embedding-alias", gjson.GetBytes(outbound.state.LlmRequest.RawRequest.Body, "model").String())
+}
+
+func TestApplyPassThroughBodySkipsPassThroughWhenSupportedStreamParameterChanges(t *testing.T) {
+	ctx := context.Background()
+
+	channel := &biz.Channel{
+		Channel: &ent.Channel{
+			ID:   1,
+			Name: "pass-through-stream-upgrade",
+			Settings: &objects.ChannelSettings{
+				PassThroughBody: lo.ToPtr(true),
+			},
+		},
+	}
+
+	request := &httpclient.Request{
+		APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+		Body:      []byte(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+	}
+
+	outbound := &PersistentOutboundTransformer{
+		state: &PersistenceState{
+			CurrentCandidate: &ChannelModelsCandidate{Channel: channel},
+			LlmRequest: &llm.Request{
+				Model:     "gpt-4o",
+				Stream:    lo.ToPtr(true),
+				APIFormat: llm.APIFormatOpenAIChatCompletion,
+				RawRequest: &httpclient.Request{
+					APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+					Body:      []byte(`{"model":"my-alias","stream":false,"messages":[{"role":"user","content":"hi"}],"temperature":0.4}`),
+				},
+			},
+		},
+	}
+
+	processed, err := applyPassThroughRequestBody(outbound, nil).OnOutboundRawRequest(ctx, request)
+	require.NoError(t, err)
+	require.Equal(t, string(request.Body), string(processed.Body))
+	require.Equal(t, "gpt-4o", gjson.GetBytes(processed.Body, "model").String())
+	require.True(t, gjson.GetBytes(processed.Body, "stream").Bool())
+	require.False(t, gjson.GetBytes(processed.Body, "temperature").Exists())
+}
+
+func TestApplyPassThroughBodyPreservesAlignedStreamWithoutPatchingIt(t *testing.T) {
+	ctx := context.Background()
+
+	channel := &biz.Channel{
+		Channel: &ent.Channel{
+			ID:   1,
+			Name: "pass-through-aligned-stream",
+			Settings: &objects.ChannelSettings{
+				PassThroughBody: lo.ToPtr(true),
+			},
+		},
+	}
+
+	outbound := &PersistentOutboundTransformer{
+		state: &PersistenceState{
+			CurrentCandidate:      &ChannelModelsCandidate{Channel: channel},
+			OriginalRequestStream: lo.ToPtr(true),
+			LlmRequest: &llm.Request{
+				Model:     "gpt-4o",
+				Stream:    lo.ToPtr(true),
+				APIFormat: llm.APIFormatOpenAIChatCompletion,
+				RawRequest: &httpclient.Request{
+					APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+					Body:      []byte(`{"model":"my-alias","stream":true,"messages":[{"role":"user","content":"hi"}],"temperature":0.4}`),
+				},
+			},
+		},
+	}
+
+	request := &httpclient.Request{
+		APIFormat: string(llm.APIFormatOpenAIChatCompletion),
+		Body:      []byte(`{"model":"gpt-4o","stream":true,"messages":[{"role":"user","content":"hi"}]}`),
+	}
+
+	processed, err := applyPassThroughRequestBody(outbound, nil).OnOutboundRawRequest(ctx, request)
+	require.NoError(t, err)
+	require.Equal(t, "gpt-4o", gjson.GetBytes(processed.Body, "model").String())
+	require.True(t, gjson.GetBytes(processed.Body, "stream").Bool())
+	require.Equal(t, 0.4, gjson.GetBytes(processed.Body, "temperature").Float())
 }
 
 func TestMergePassThroughBodySkipsFormatsWithoutTopLevelModel(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/looplj/axonhub/llm/httpclient"
 )
@@ -22,10 +23,10 @@ func (p *pipeline) notStream(
 		p.applyRawErrorResponseMiddlewares(ctx, err)
 
 		if httpErr, ok := errors.AsType[*httpclient.Error](err); ok {
-			return nil, p.Outbound.TransformError(ctx, httpErr)
+			return nil, WrapUpstreamError(p.Outbound.TransformError(ctx, httpErr))
 		}
 
-		return nil, fmt.Errorf("failed to do request: %w", err)
+		return nil, WrapUpstreamError(fmt.Errorf("failed to do request: %w", err))
 	}
 
 	// Apply raw response middlewares
@@ -40,7 +41,7 @@ func (p *pipeline) notStream(
 	if err != nil {
 		p.applyRawErrorResponseMiddlewares(ctx, err)
 
-		return nil, fmt.Errorf("failed to transform response: %w", err)
+		return nil, WrapUpstreamError(fmt.Errorf("failed to transform response: %w", err))
 	}
 
 	// Apply LLM response middlewares
@@ -75,4 +76,62 @@ func (p *pipeline) notStream(
 	}
 
 	return finalResp, nil
+}
+
+func (p *pipeline) autoAggregateStream(
+	ctx context.Context,
+	executor Executor,
+	request *httpclient.Request,
+) (*httpclient.Response, error) {
+	inboundStream, err := p.stream(ctx, executor, request)
+	if err != nil {
+		return nil, err
+	}
+	defer inboundStream.Close()
+
+	chunks := make([]*httpclient.StreamEvent, 0, 8)
+	for inboundStream.Next() {
+		event := inboundStream.Current()
+		if event != nil {
+			chunks = append(chunks, event)
+		}
+	}
+
+	if err := inboundStream.Err(); err != nil {
+		p.applyRawErrorResponseMiddlewares(ctx, err)
+		return nil, err
+	}
+
+	if len(chunks) == 0 {
+		p.applyRawErrorResponseMiddlewares(ctx, ErrEmptyStreamChunks)
+		return nil, ErrEmptyStreamChunks
+	}
+
+	body, _, err := p.Inbound.AggregateStreamChunks(ctx, chunks)
+	if err != nil {
+		p.applyRawErrorResponseMiddlewares(ctx, err)
+		return nil, err
+	}
+
+	if len(body) == 0 {
+		p.applyRawErrorResponseMiddlewares(ctx, ErrEmptyAggregatedBody)
+		return nil, ErrEmptyAggregatedBody
+	}
+
+	resp := &httpclient.Response{
+		StatusCode: http.StatusOK,
+		Headers: http.Header{
+			"Content-Type":  []string{"application/json"},
+			"Cache-Control": []string{"no-cache"},
+		},
+		Body: body,
+	}
+
+	resp, err = p.applyInboundRawResponseMiddlewares(ctx, resp)
+	if err != nil {
+		p.applyRawErrorResponseMiddlewares(ctx, err)
+		return nil, fmt.Errorf("failed to apply inbound raw response middlewares: %w", err)
+	}
+
+	return resp, nil
 }

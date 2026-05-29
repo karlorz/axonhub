@@ -29,6 +29,10 @@ type streamAggregator struct {
 
 	// Usage
 	usage *Usage
+
+	// Terminal response details
+	responseError     *Error
+	incompleteDetails *ResponseIncompleteDetails
 }
 
 // aggregatedItem holds the accumulated state for an output item.
@@ -60,8 +64,9 @@ type aggregatedSummaryPart struct {
 
 // aggregatedContentPart holds the accumulated state for a content part.
 type aggregatedContentPart struct {
-	Type string
-	Text *strings.Builder
+	Type        string
+	Text        *strings.Builder
+	Annotations []Annotation
 }
 
 func newAggregatedItem() *aggregatedItem {
@@ -75,6 +80,22 @@ func newAggregatedContentPart() *aggregatedContentPart {
 	return &aggregatedContentPart{
 		Text: &strings.Builder{},
 	}
+}
+
+func ensureContentPart(item *aggregatedItem, contentIndex int) *aggregatedContentPart {
+	if item == nil || contentIndex < 0 {
+		return nil
+	}
+
+	for len(item.Content) <= contentIndex {
+		item.Content = append(item.Content, newAggregatedContentPart())
+	}
+
+	if item.Content[contentIndex] == nil {
+		item.Content[contentIndex] = newAggregatedContentPart()
+	}
+
+	return item.Content[contentIndex]
 }
 
 func ensureSummaryPart(item *aggregatedItem, summaryIndex int) *aggregatedSummaryPart {
@@ -265,6 +286,7 @@ func (a *streamAggregator) processEvent(ev *StreamEvent) {
 				if ev.Part.Text != nil {
 					contentPart.Text.WriteString(*ev.Part.Text)
 				}
+				contentPart.Annotations = append([]Annotation(nil), ev.Part.Annotations...)
 			}
 
 			item.Content = append(item.Content, contentPart)
@@ -449,6 +471,24 @@ func (a *streamAggregator) processEvent(ev *StreamEvent) {
 					item.Arguments.WriteString(ev.Item.Arguments)
 				}
 
+				if ev.Item.Content != nil {
+					for idx, contentItem := range ev.Item.Content.Items {
+						part := ensureContentPart(item, idx)
+						if part == nil {
+							continue
+						}
+						if contentItem.Type != "" {
+							part.Type = contentItem.Type
+						}
+						if contentItem.Text != nil {
+							applyDoneText(part.Text, *contentItem.Text)
+						}
+						if contentItem.Annotations != nil {
+							part.Annotations = append([]Annotation(nil), contentItem.Annotations...)
+						}
+					}
+				}
+
 				if len(ev.Item.Summary) > 0 {
 					for idx, s := range ev.Item.Summary {
 						part := ensureSummaryPart(item, idx)
@@ -474,10 +514,53 @@ func (a *streamAggregator) processEvent(ev *StreamEvent) {
 		}
 
 	case StreamEventTypeResponseFailed:
-		a.status = "failed"
+		a.applyResponseSnapshot(ev.Response)
+		if ev.Response == nil || ev.Response.Status == nil {
+			a.status = "failed"
+		}
+
+	case StreamEventTypeResponseCancelled:
+		a.applyResponseSnapshot(ev.Response)
+		if ev.Response == nil || ev.Response.Status == nil {
+			a.status = "canceled"
+		}
 
 	case StreamEventTypeResponseIncomplete:
-		a.status = "incomplete"
+		a.applyResponseSnapshot(ev.Response)
+		if ev.Response == nil || ev.Response.Status == nil {
+			a.status = "incomplete"
+		}
+	}
+}
+
+func (a *streamAggregator) applyResponseSnapshot(response *Response) {
+	if response == nil {
+		return
+	}
+
+	if response.ID != "" {
+		a.responseID = response.ID
+	}
+	if response.Model != "" {
+		a.model = response.Model
+	}
+	if response.CreatedAt != 0 {
+		a.createdAt = response.CreatedAt
+	}
+	if response.PreviousResponseID != nil {
+		a.previousResponseID = response.PreviousResponseID
+	}
+	if response.Status != nil {
+		a.status = *response.Status
+	}
+	if response.Usage != nil {
+		a.usage = response.Usage
+	}
+	if response.Error != nil {
+		a.responseError = response.Error
+	}
+	if response.IncompleteDetails != nil {
+		a.incompleteDetails = response.IncompleteDetails
 	}
 }
 
@@ -509,8 +592,9 @@ func (a *streamAggregator) buildResponse() *Response {
 				for _, cp := range item.Content {
 					text := cp.Text.String()
 					contentItems = append(contentItems, Item{
-						Type: cp.Type,
-						Text: &text,
+						Type:        cp.Type,
+						Text:        &text,
+						Annotations: append([]Annotation(nil), cp.Annotations...),
 					})
 				}
 
@@ -606,5 +690,7 @@ func (a *streamAggregator) buildResponse() *Response {
 		Output:             output,
 		Usage:              a.usage,
 		PreviousResponseID: a.previousResponseID,
+		Error:              a.responseError,
+		IncompleteDetails:  a.incompleteDetails,
 	}
 }

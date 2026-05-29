@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync"
 
 	"github.com/tidwall/sjson"
 
@@ -37,6 +38,10 @@ func (p *PersistentOutboundTransformer) isPassThroughEnabled(ctx context.Context
 		return false
 	}
 
+	if !passThroughStreamAligned(p.state.OriginalRequestStream, llmReq.Stream) {
+		return false
+	}
+
 	var enabled bool
 
 	switch {
@@ -54,6 +59,13 @@ func (p *PersistentOutboundTransformer) isPassThroughEnabled(ctx context.Context
 	}
 
 	return enabled
+}
+
+func passThroughStreamAligned(originalStream, effectiveStream *bool) bool {
+	originalEnabled := originalStream != nil && *originalStream
+	effectiveEnabled := effectiveStream != nil && *effectiveStream
+
+	return originalEnabled == effectiveEnabled
 }
 
 // applyPassThroughRequestBody creates a middleware that reuses the original inbound request body when
@@ -234,24 +246,48 @@ func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemSer
 		// to unblock the goroutine's channel sends and release the upstream HTTP connection
 		// before the next attempt starts, preventing goroutine leaks.
 		attemptCtx, cancel := context.WithCancel(ctx)
-		outbound.state.RawStreamCancel = cancel
+		var closeStreamOnce sync.Once
+		closeStream := func() {
+			closeStreamOnce.Do(func() {
+				cancel()
+				_ = stream.Close()
+			})
+		}
+		outbound.state.RawStreamCancel = closeStream
 
 		go func() {
-			// Ensure the context is cleaned up when the goroutine exits, regardless of
-			// whether it finished naturally or was canceled by a retry.
-			defer cancel()
-			defer stream.Close()
-			// Write rawStreamErr BEFORE closing channels so consumers observing the
-			// closed channel via Next() see the error in Err(). The close acts as
-			// a happens-before barrier, ensuring visibility across goroutines.
 			defer func() {
-				rawStreamErr = stream.Err()
+				if r := recover(); r != nil {
+					log.Warn(ctx, "captureRawProviderStream goroutine panicked, recovering",
+						log.Any("panic", r),
+						log.String("channel", channel.Name),
+					)
+					rawStreamErr = fmt.Errorf("passthrough stream panic: %v", r)
+				} else {
+					rawStreamErr = stream.Err()
+				}
 
 				close(pipelineCh)
 				close(rawStreamCh)
 			}()
+			// Ensure the context is cleaned up when the goroutine exits, regardless of
+			// whether it finished naturally or was canceled by a retry.
+			defer closeStream()
 
-			for stream.Next() {
+			for {
+				select {
+				case <-attemptCtx.Done():
+					log.Debug(ctx, "context canceled before reading pass-through stream",
+						log.String("channel", channel.Name))
+
+					return
+				default:
+				}
+
+				if !stream.Next() {
+					return
+				}
+
 				event := stream.Current()
 				// Use blocking sends so events are not silently dropped when a
 				// consumer is slower than the upstream provider. Bail out on
@@ -277,7 +313,7 @@ func captureRawProviderStream(outbound *PersistentOutboundTransformer, systemSer
 			}
 		}()
 
-		return &passThroughChannelStream{ctx: ctx, ch: pipelineCh, errRef: &rawStreamErr}, nil
+		return &passThroughChannelStream{ctx: ctx, ch: pipelineCh, errRef: &rawStreamErr, cancel: closeStream}, nil
 	})
 }
 
@@ -298,6 +334,7 @@ func applyPassThroughStream(outbound *PersistentOutboundTransformer, systemServi
 		// Snapshot the current attempt's error reference. If a future retry replaces
 		// state.RawStreamErrRef, this stream still reads from the correct variable.
 		errRef := outbound.state.RawStreamErrRef
+		cancel := outbound.state.RawStreamCancel
 
 		channel := outbound.GetCurrentChannel()
 
@@ -313,7 +350,7 @@ func applyPassThroughStream(outbound *PersistentOutboundTransformer, systemServi
 			stream.Close()
 		}()
 
-		return &passThroughChannelStream{ctx: ctx, ch: rawCh, errRef: errRef}, nil
+		return &passThroughChannelStream{ctx: ctx, ch: rawCh, errRef: errRef, cancel: cancel}, nil
 	})
 }
 
@@ -325,6 +362,8 @@ type passThroughChannelStream struct {
 	ch      <-chan *httpclient.StreamEvent
 	current *httpclient.StreamEvent
 	errRef  *error
+	cancel  context.CancelFunc
+	once    sync.Once
 }
 
 func (s *passThroughChannelStream) Next() bool {
@@ -339,6 +378,8 @@ func (s *passThroughChannelStream) Next() bool {
 
 			return true
 		case <-s.ctx.Done():
+			_ = s.Close()
+
 			return false
 		}
 	}
@@ -363,4 +404,12 @@ func (s *passThroughChannelStream) Err() error {
 	return nil
 }
 
-func (s *passThroughChannelStream) Close() error { return nil }
+func (s *passThroughChannelStream) Close() error {
+	s.once.Do(func() {
+		if s.cancel != nil {
+			s.cancel()
+		}
+	})
+
+	return nil
+}

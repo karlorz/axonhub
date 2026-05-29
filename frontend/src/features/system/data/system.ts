@@ -5,6 +5,7 @@ import { getTokenFromStorage } from '@/stores/authStore';
 import i18n from '@/lib/i18n';
 import { useErrorHandler } from '@/hooks/use-error-handler';
 import type { ProxyConfig } from '@/features/channels/data/schema';
+import type { ModelAssociation } from '@/features/models/data/schema';
 
 // GraphQL queries and mutations
 const SYSTEM_VERSION_QUERY = `
@@ -56,6 +57,7 @@ const BRAND_SETTINGS_QUERY = `
     brandSettings {
       brandName
       brandLogo
+      title
     }
   }
 `;
@@ -97,6 +99,10 @@ const RETRY_POLICY_QUERY = `
       loadBalancerStrategy
       enabled
       emptyResponseDetection
+      upstreamErrorPolicy {
+        mode
+        customMessage
+      }
       autoDisableChannel {
         enabled
         statuses {
@@ -196,8 +202,19 @@ const COMPLETE_AUTO_DISABLE_CHANNEL_ONBOARDING_MUTATION = `
 `;
 
 const TRIGGER_GC_CLEANUP_MUTATION = `
-  mutation triggerGcCleanup {
-    triggerGcCleanup
+  mutation triggerGcCleanup($input: TriggerGcCleanupInput!) {
+    triggerGcCleanup(input: $input)
+  }
+`;
+
+const PREVIEW_GC_CLEANUP_QUERY = `
+  query previewGcCleanup($input: TriggerGcCleanupInput!) {
+    previewGcCleanup(input: $input) {
+      resourceType
+      estimatedCount
+      cutoffTime
+      retentionDays
+    }
   }
 `;
 
@@ -205,6 +222,7 @@ const TRIGGER_GC_CLEANUP_MUTATION = `
 export interface BrandSettings {
   brandName?: string;
   brandLogo?: string;
+  title?: string;
 }
 
 export interface SystemGeneralSettings {
@@ -248,6 +266,7 @@ export interface CleanupOption {
 export interface UpdateBrandSettingsInput {
   brandName?: string;
   brandLogo?: string;
+  title?: string;
 }
 
 export interface UpdateStoragePolicyInput {
@@ -262,6 +281,18 @@ export interface CleanupOptionInput {
   resourceType: string;
   enabled: boolean;
   cleanupDays: number;
+}
+
+export interface TriggerGcCleanupInput {
+  requestsCleanupDays: number;
+  usageLogsCleanupDays: number;
+}
+
+export interface GcCleanupPreviewItem {
+  resourceType: string;
+  estimatedCount: number;
+  cutoffTime: string;
+  retentionDays: number;
 }
 
 export interface AutoDisableChannelStatus {
@@ -307,6 +338,12 @@ export interface RetryPolicy {
   enabled: boolean;
   autoDisableChannel: AutoDisableChannel;
   emptyResponseDetection: boolean;
+  upstreamErrorPolicy: UpstreamErrorPolicy;
+}
+
+export interface UpstreamErrorPolicy {
+  mode: string;
+  customMessage: string;
 }
 
 export interface AutoDisableChannelStatusInput {
@@ -327,6 +364,7 @@ export interface RetryPolicyInput {
   enabled?: boolean;
   autoDisableChannel?: AutoDisableChannelInput;
   emptyResponseDetection?: boolean;
+  upstreamErrorPolicy?: Partial<UpstreamErrorPolicy>;
 }
 
 export interface UpdateDefaultDataStorageInput {
@@ -393,11 +431,12 @@ export interface ClearCachePayload {
 }
 
 // Hooks
-export function useBrandSettings() {
+export function useBrandSettings(options?: { enabled?: boolean }) {
   const { handleError } = useErrorHandler();
 
   return useQuery({
     queryKey: ['brandSettings'],
+    enabled: options?.enabled,
     queryFn: async () => {
       try {
         const data = await graphqlRequest<{ brandSettings: BrandSettings }>(BRAND_SETTINGS_QUERY);
@@ -465,8 +504,8 @@ export function useUpdateStoragePolicy() {
 
 export function useTriggerGcCleanup() {
   return useMutation({
-    mutationFn: async () => {
-      const data = await graphqlRequest<{ triggerGcCleanup: boolean }>(TRIGGER_GC_CLEANUP_MUTATION);
+    mutationFn: async (input: TriggerGcCleanupInput) => {
+      const data = await graphqlRequest<{ triggerGcCleanup: boolean }>(TRIGGER_GC_CLEANUP_MUTATION, { input });
       return data.triggerGcCleanup;
     },
     onSuccess: () => {
@@ -474,6 +513,15 @@ export function useTriggerGcCleanup() {
     },
     onError: () => {
       toast.error(i18n.t('system.storage.policy.runCleanupError'));
+    },
+  });
+}
+
+export function usePreviewGcCleanup() {
+  return useMutation({
+    mutationFn: async (input: TriggerGcCleanupInput) => {
+      const data = await graphqlRequest<{ previewGcCleanup: GcCleanupPreviewItem[] }>(PREVIEW_GC_CLEANUP_QUERY, { input });
+      return data.previewGcCleanup;
     },
   });
 }
@@ -740,6 +788,71 @@ const MODEL_SETTINGS_QUERY = `
       queryAllChannelModels
       defaultModelAPIIncludeAll
       autoReasoningEffort
+      modelBlacklistRegex
+      developerSettings {
+        developer
+        associations {
+          type
+          priority
+          disabled
+          when {
+            enabled
+            condition {
+              type
+              logic
+              field
+              operator
+              value
+              conditions {
+                type
+                logic
+                field
+                operator
+                value
+                conditions {
+                  type
+                  logic
+                  field
+                  operator
+                  value
+                }
+              }
+            }
+          }
+          channelModel {
+            channelId
+            modelId
+          }
+          channelRegex {
+            channelId
+            pattern
+          }
+          regex {
+            pattern
+            exclude {
+              channelNamePattern
+              channelIds
+              channelTags
+            }
+          }
+          modelId {
+            modelId
+            exclude {
+              channelNamePattern
+              channelIds
+              channelTags
+            }
+          }
+          channelTagsModel {
+            channelTags
+            modelId
+          }
+          channelTagsRegex {
+            channelTags
+            pattern
+          }
+        }
+      }
     }
   }
 `;
@@ -807,6 +920,8 @@ export interface ModelSettings {
   queryAllChannelModels: boolean;
   defaultModelAPIIncludeAll: boolean;
   autoReasoningEffort: boolean;
+  modelBlacklistRegex: string;
+  developerSettings: DeveloperModelSettings[];
 }
 
 export interface UpdateModelSettingsInput {
@@ -814,6 +929,13 @@ export interface UpdateModelSettingsInput {
   queryAllChannelModels?: boolean;
   defaultModelAPIIncludeAll?: boolean;
   autoReasoningEffort?: boolean;
+  modelBlacklistRegex?: string;
+  developerSettings?: DeveloperModelSettings[];
+}
+
+export interface DeveloperModelSettings {
+  developer: string;
+  associations: ModelAssociation[];
 }
 
 export function useModelSettings() {
@@ -843,6 +965,7 @@ export function useUpdateModelSettings() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['modelSettings'] });
+      queryClient.invalidateQueries({ queryKey: ['models'] });
       toast.success(i18n.t('common.success.systemUpdated'));
     },
     onError: () => {
@@ -1015,6 +1138,7 @@ export interface BackupOptionsInput {
   includeModelPrices: boolean;
   includeModels: boolean;
   includeAPIKeys: boolean;
+  includeUsageStats: boolean;
 }
 
 export interface BackupPayload {
@@ -1028,6 +1152,7 @@ export interface RestoreOptionsInput {
   includeModelPrices: boolean;
   includeModels: boolean;
   includeAPIKeys: boolean;
+  includeUsageStats: boolean;
   channelConflictStrategy: 'skip' | 'overwrite' | 'error';
   modelConflictStrategy: 'skip' | 'overwrite' | 'error';
   modelPriceConflictStrategy: 'skip' | 'overwrite' | 'error';
@@ -1124,6 +1249,7 @@ const AUTO_BACKUP_SETTINGS_QUERY = `
       includeModels
       includeAPIKeys
       includeModelPrices
+      includeUsageStats
       retentionDays
       lastBackupAt
       lastBackupError
@@ -1156,6 +1282,7 @@ export interface AutoBackupSettings {
   includeModels: boolean;
   includeAPIKeys: boolean;
   includeModelPrices: boolean;
+  includeUsageStats: boolean;
   retentionDays: number;
   lastBackupAt?: string;
   lastBackupError?: string;
@@ -1169,6 +1296,7 @@ export interface UpdateAutoBackupSettingsInput {
   includeModels?: boolean;
   includeAPIKeys?: boolean;
   includeModelPrices?: boolean;
+  includeUsageStats?: boolean;
   retentionDays?: number;
 }
 

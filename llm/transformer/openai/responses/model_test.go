@@ -202,6 +202,29 @@ func TestItemUnmarshalJSON_Compaction(t *testing.T) {
 	}
 }
 
+func TestItemUnmarshalJSON_AcceptsObjectArguments(t *testing.T) {
+	var item Item
+	err := json.Unmarshal([]byte(`{
+		"type": "tool_search_call",
+		"call_id": "call_123",
+		"arguments": {"query":"image generation","limit":10}
+	}`), &item)
+	require.NoError(t, err)
+	require.Equal(t, "tool_search_call", item.Type)
+	require.Equal(t, `{"query":"image generation","limit":10}`, item.Arguments)
+}
+
+func TestItemUnmarshalJSON_AcceptsStringArguments(t *testing.T) {
+	var item Item
+	err := json.Unmarshal([]byte(`{
+		"type": "function_call",
+		"call_id": "call_123",
+		"arguments": "{\"location\":\"NYC\"}"
+	}`), &item)
+	require.NoError(t, err)
+	require.Equal(t, `{"location":"NYC"}`, item.Arguments)
+}
+
 func TestInputUnmarshalJSON_ClearsConflictingRepresentation(t *testing.T) {
 	input := Input{
 		Text: lo.ToPtr("stale"),
@@ -246,4 +269,42 @@ func TestResponseToolChoiceUnmarshalJSON_ClearsConflictingRepresentation(t *test
 	require.Equal(t, "function", *choice.ObjectValue.Type)
 	require.NotNil(t, choice.ObjectValue.Name)
 	require.Equal(t, "get_weather", *choice.ObjectValue.Name)
+}
+
+func TestToolChoiceMarshalJSON_PreservesStringModes(t *testing.T) {
+	cases := []struct {
+		name     string
+		choice   ToolChoice
+		expected string
+	}{
+		{
+			name: "auto marshals as string",
+			choice: ToolChoice{
+				Mode: lo.ToPtr("auto"),
+			},
+			expected: `"auto"`,
+		},
+		{
+			name: "required marshals as string",
+			choice: ToolChoice{
+				Mode: lo.ToPtr("required"),
+			},
+			expected: `"required"`,
+		},
+		{
+			name: "none marshals as string",
+			choice: ToolChoice{
+				Mode: lo.ToPtr("none"),
+			},
+			expected: `"none"`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(&tc.choice)
+			require.NoError(t, err)
+			require.JSONEq(t, tc.expected, string(data))
+		})
+	}
 }

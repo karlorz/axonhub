@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
+	"reflect"
 	"strings"
+	"sync"
 
 	"github.com/samber/lo"
 
@@ -13,13 +16,22 @@ import (
 	"github.com/looplj/axonhub/llm/auth"
 	"github.com/looplj/axonhub/llm/httpclient"
 	"github.com/looplj/axonhub/llm/internal/pkg/xmap"
+	"github.com/looplj/axonhub/llm/pipeline"
 	"github.com/looplj/axonhub/llm/transformer"
 	"github.com/looplj/axonhub/llm/transformer/shared"
 )
 
-var _ transformer.Outbound = (*OutboundTransformer)(nil)
+var (
+	_ transformer.Outbound               = (*OutboundTransformer)(nil)
+	_ pipeline.ChannelCustomizedExecutor = (*OutboundTransformer)(nil)
+)
 
 // Config holds all configuration for the OpenAI Responses outbound transformer.
+const (
+	TransportHTTP      = "http"
+	TransportWebSocket = "websocket"
+)
+
 type Config struct {
 	// BaseURL is the base URL for the OpenAI API, required.
 	BaseURL string `json:"base_url,omitempty"`
@@ -35,6 +47,10 @@ type Config struct {
 
 	// APIKeyProvider provides API keys for authentication, required.
 	APIKeyProvider auth.APIKeyProvider `json:"-"`
+
+	// Transport selects the upstream transport for Responses API requests.
+	// Empty and "http" use the existing HTTP/SSE transport; "websocket" uses Responses WebSocket mode.
+	Transport string `json:"transport,omitempty"`
 }
 
 func NewOutboundTransformer(baseURL, apiKey string) (*OutboundTransformer, error) {
@@ -75,8 +91,62 @@ func NewOutboundTransformerWithConfig(config *Config) (*OutboundTransformer, err
 	}, nil
 }
 
+func (t *OutboundTransformer) CustomizeExecutor(executor pipeline.Executor) pipeline.Executor {
+	if t == nil || t.config == nil || t.config.Transport != TransportWebSocket {
+		return executor
+	}
+
+	if !ExecutorComparable(executor) {
+		return NewWebSocketExecutor(executor)
+	}
+
+	t.executorMu.Lock()
+	defer t.executorMu.Unlock()
+
+	if t.webSocketExecutors == nil {
+		t.webSocketExecutors = make(map[pipeline.Executor]*WebSocketExecutor)
+	}
+	if cached, ok := t.webSocketExecutors[executor]; ok {
+		return cached
+	}
+
+	webSocketExecutor := NewWebSocketExecutor(executor)
+	t.webSocketExecutors[executor] = webSocketExecutor
+
+	return webSocketExecutor
+}
+
+func (t *OutboundTransformer) Stop() {
+	if t == nil {
+		return
+	}
+
+	t.executorMu.Lock()
+	executors := make([]*WebSocketExecutor, 0, len(t.webSocketExecutors))
+	for _, executor := range t.webSocketExecutors {
+		executors = append(executors, executor)
+	}
+	t.webSocketExecutors = nil
+	t.executorMu.Unlock()
+
+	for _, executor := range executors {
+		_ = executor.Close()
+	}
+}
+
+func ExecutorComparable(executor pipeline.Executor) bool {
+	if executor == nil {
+		return true
+	}
+
+	return reflect.TypeOf(executor).Comparable()
+}
+
 type OutboundTransformer struct {
 	config *Config
+
+	executorMu         sync.Mutex
+	webSocketExecutors map[pipeline.Executor]*WebSocketExecutor
 }
 
 func (t *OutboundTransformer) APIFormat() llm.APIFormat {
@@ -149,6 +219,9 @@ func (t *OutboundTransformer) TransformRequest(ctx context.Context, llmReq *llm.
 			tools = append(tools, tool)
 			// Store image output format in TransformerMetadata
 			llmReq.TransformerMetadata["image_output_format"] = tool.OutputFormat
+		case llm.ToolTypeWebSearch, llm.ToolTypeGoogleSearch:
+			tool := convertWebSearchToTool(item)
+			tools = append(tools, tool)
 		case llm.ToolTypeResponsesCustomTool:
 			tool := convertCustomToTool(item)
 			tools = append(tools, tool)
@@ -204,7 +277,7 @@ func (t *OutboundTransformer) TransformRequest(ctx context.Context, llmReq *llm.
 		payload.MaxOutputTokens = llmReq.MaxTokens
 	}
 
-	body, err := json.Marshal(payload)
+	body, err := marshalRequestPayload(payload, llmReq)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal responses api request: %w", err)
 	}
@@ -293,12 +366,13 @@ func (t *OutboundTransformer) transformStandardResponse(
 	}
 
 	llmResp := &llm.Response{
-		Object:             "chat.completion",
-		ID:                 resp.ID,
-		Model:              resp.Model,
-		Created:            resp.CreatedAt,
-		PreviousResponseID: resp.PreviousResponseID,
-		Choices:            make([]llm.Choice, 0),
+		Object:              "chat.completion",
+		ID:                  resp.ID,
+		Model:               resp.Model,
+		Created:             resp.CreatedAt,
+		PreviousResponseID:  resp.PreviousResponseID,
+		Choices:             make([]llm.Choice, 0),
+		TransformerMetadata: map[string]any{},
 	}
 
 	// Convert usage if present
@@ -306,12 +380,11 @@ func (t *OutboundTransformer) transformStandardResponse(
 		llmResp.Usage = resp.Usage.ToUsage()
 	}
 
-	var transformerMetadata map[string]any
-	if httpResp.Request != nil {
-		transformerMetadata = httpResp.Request.TransformerMetadata
+	if httpResp.Request != nil && httpResp.Request.TransformerMetadata != nil {
+		llmResp.TransformerMetadata = maps.Clone(httpResp.Request.TransformerMetadata)
 	}
 
-	msg := convertOutputToMessage(resp.Output, transformerMetadata)
+	msg := convertOutputToMessage(resp.Output, llmResp.TransformerMetadata)
 
 	choice := llm.Choice{
 		Index:   0,
@@ -328,6 +401,8 @@ func (t *OutboundTransformer) transformStandardResponse(
 			choice.FinishReason = lo.ToPtr("error")
 		case "incomplete":
 			choice.FinishReason = lo.ToPtr("length")
+		case "canceled", "cancelled":
+			choice.FinishReason = lo.ToPtr("cancelled")
 		}
 	}
 

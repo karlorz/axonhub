@@ -94,6 +94,7 @@ type BackupPayload struct {
 type BrandSettings struct {
 	BrandName *string `json:"brandName,omitempty"`
 	BrandLogo *string `json:"brandLogo,omitempty"`
+	Title     *string `json:"title,omitempty"`
 }
 
 type BulkImportChannelsInput struct {
@@ -501,12 +502,14 @@ type UpdateAutoBackupSettingsInput struct {
 	IncludeModels      *bool                `json:"includeModels,omitempty"`
 	IncludeAPIKeys     *bool                `json:"includeAPIKeys,omitempty"`
 	IncludeModelPrices *bool                `json:"includeModelPrices,omitempty"`
+	IncludeUsageStats  *bool                `json:"includeUsageStats,omitempty"`
 	RetentionDays      *int                 `json:"retentionDays,omitempty"`
 }
 
 type UpdateBrandSettingsInput struct {
 	BrandName *string `json:"brandName,omitempty"`
 	BrandLogo *string `json:"brandLogo,omitempty"`
+	Title     *string `json:"title,omitempty"`
 }
 
 type UpdateDefaultDataStorageInput struct {

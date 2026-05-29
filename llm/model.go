@@ -272,6 +272,10 @@ type Request struct {
 	// - "truncation": *string - truncation strategy ("auto", "disabled")
 	// - "include_obfuscation": *bool - whether to enable stream obfuscation (Responses API specific)
 	TransformerMetadata map[string]any `json:"transformer_metadata,omitempty"`
+
+	// ProviderExtensions stores provider/API-format private sidecar data.
+	// It is intentionally excluded from normal JSON output to avoid leaking raw prompts or tool outputs.
+	ProviderExtensions *ProviderExtensions `json:"-"`
 }
 
 type StreamOptions struct {
@@ -392,6 +396,10 @@ type Message struct {
 type Annotation struct {
 	// Type is the type of annotation, e.g., "url_citation"
 	Type string `json:"type,omitempty"`
+	// StartIndex is the start Unicode code-point (rune) offset of the annotated span in the message content.
+	StartIndex *int64 `json:"start_index,omitempty"`
+	// EndIndex is the end Unicode code-point (rune) offset of the annotated span in the message content.
+	EndIndex *int64 `json:"end_index,omitempty"`
 	// URLCitation contains URL citation details when Type is "url_citation"
 	URLCitation *URLCitation `json:"url_citation,omitempty"`
 }
