@@ -1307,7 +1307,10 @@ enum ChannelType @goModel(model: "github.com/looplj/axonhub/internal/ent/channel
   nanogpt
   nanogpt_responses
   opencode_go
+  opencode_go_anthropic
   ollama
+  evolink
+  evolink_anthropic
 }
 """
 ChannelWhereInput is used for filtering Channel objects.
@@ -3744,6 +3747,7 @@ enum ProviderQuotaStatusProviderType @goModel(model: "github.com/looplj/axonhub/
   wafer
   synthetic
   neuralwatt
+  apertis
 }
 """
 ProviderQuotaStatusStatus is enum for the field status
