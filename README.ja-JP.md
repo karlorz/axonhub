@@ -14,7 +14,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/looplj/axonhub?logo=go&logoColor=white)](https://golang.org/)
 [![Docker Ready](https://img.shields.io/badge/docker-ready-2496ED?logo=docker&logoColor=white)](https://docker.com)
 
-[English](README.md) | [中文](README.zh-CN.md) | [日本語](README.ja-JP.md)
+[English](README.en-US.md) | [中文](README.md) | [日本語](README.ja-JP.md)
 
 </div>
 
@@ -24,21 +24,40 @@
 
 <div align="center">
 
-<a href="https://lj.s.gy/oZl7Vd" target="_blank">
-  <img src="docs/sponsors/atlas-cloud-logomark-black.svg" alt="Atlas Cloud" height="32"/>
-</a>
-&nbsp;&nbsp;&nbsp;
-<a href="https://lj.s.gy/oZl7Vd" target="_blank">
-  <strong>Atlas Cloud</strong>
-</a>
-
-</div>
-
-<div align="center">
-
-<a href="https://lj.s.gy/oZl7Vd" target="_blank">Atlas Cloud</a> は、開発者に動画生成、画像生成、LLM API へアクセスできる単一の AI API を提供するフルモーダル AI 推論プラットフォームです。複数のベンダー統合を管理する代わりに、一度接続するだけで全モーダルにわたる 300 以上の厳選されたモデルへ統一アクセスできます。
-
-Atlas Cloud の <a href="https://lj.s.gy/jknt2V" target="_blank">新しいコーディングプラン特典</a> で、よりお得な API アクセスをご利用ください。
+<table width="100%">
+  <tr>
+    <td width="50%" align="center" valign="top">
+      <a href="https://lj.s.gy/oZl7Vd" target="_blank">
+        <picture>
+          <source media="(prefers-color-scheme: dark)" srcset="docs/sponsors/atlas-cloud-logomark-white.svg"/>
+          <source media="(prefers-color-scheme: light)" srcset="docs/sponsors/atlas-cloud-logomark-black.svg"/>
+          <img src="docs/sponsors/atlas-cloud-logomark-black.svg" alt="Atlas Cloud" height="50"/>
+        </picture>
+        <br/>
+        <strong>Atlas Cloud</strong>
+      </a>
+      <p align="left">
+        <a href="https://lj.s.gy/oZl7Vd" target="_blank">Atlas Cloud</a> は、開発者に動画生成、画像生成、LLM API へアクセスできる単一の AI API を提供するフルモーダル AI 推論プラットフォームです。複数のベンダー統合を管理する代わりに、一度接続するだけで全モーダルにわたる 300 以上の厳選されたモデルへ統一アクセスできます。
+      </p>
+      <p align="left">
+        Atlas Cloud の <a href="https://lj.s.gy/jknt2V" target="_blank">新しいコーディングプラン特典</a> で、よりお得な API アクセスをご利用ください。
+      </p>
+    </td>
+    <td width="50%" align="center" valign="top">
+      <a href="https://lj.s.gy/jKk8uU" target="_blank">
+        <img src="https://raw.githubusercontent.com/Krill-ai-org/krill-ai-static/refs/heads/main/krill-logo/Eng/250x150.png" alt="Krill AI" height="50"/>
+        <br/>
+        <strong>Krill AI</strong>
+      </a>
+      <p align="left">
+        本プロジェクトを支援いただいている Krill AI に感謝します。Krill は GPT、Claude、Gemini および多数の中国国内モデル向けに、公式かつ安定した高速 API 中継サービスを提供しています。エンタープライズ向けカスタマイズ、請求書発行、1日16時間・週7日の専用技術サポートに対応しています。独自に最適化された WebSocket 接続により、最初のトークンをより速く受け取れます。
+      </p>
+      <p align="left">
+        <a href="https://lj.s.gy/jKk8uU" target="_blank">このリンク</a> から登録し、チャージ時に <code>AxonHub</code> クーポンコードを入力すると、初回の Codex プラン購入が 23% オフになります。
+      </p>
+    </td>
+  </tr>
+</table>
 
 </div>
 
@@ -54,7 +73,31 @@ Atlas Cloud の <a href="https://lj.s.gy/jknt2V" target="_blank">新しいコー
   <tbody>
     <tr>
       <td align="center" valign="middle">
-        <a href="https://bloome.im/" target="_blank">
+        <a href="https://lj.s.gy/8HNo22" target="_blank">
+          <img src="https://www-static.qbox.me/_next/static/media/logo.0fc18feaa621d2068a7180631f742256.jpg" alt="七牛云 AI" height="90"/>
+          <br/>
+          <strong>七牛云 AI</strong>
+        </a>
+      </td>
+      <td valign="middle">
+        七牛云 AI は七牛云（02567.HK）傘下の企業向け大規模モデル MaaS プラットフォームです。世界中の 150 以上の主要モデルをワンストップで利用でき、主要なモデルプロバイダーのプロトコルに対応しています。テキスト、画像、音声、動画、ファイル処理など、あらゆるモダリティに対応し、169 万を超える企業・開発者にサービスを提供しています。AxonHub ユーザー限定特典として、<a href="https://lj.s.gy/8HNo22" target="_blank">こちらのリンクから登録</a>すると、企業ユーザーは 1,200 万トークン、開発者は 300 万トークンを無料で受け取れます。
+      </td>
+    </tr>
+    <tr>
+      <td align="center" valign="middle">
+        <a href="https://lj.s.gy/Wo8IuN" target="_blank">
+          <img src="https://api.fenno.ai/branding/standard/icon.webp" alt="FennoAI" height="90"/>
+          <br/>
+          <strong>FennoAI</strong>
+        </a>
+      </td>
+      <td valign="middle">
+        FennoAI は、企業の研究開発チームと開発者向けに、高い安定性と性能を提供する API 中継サービスです。OpenAI および Anthropic プロトコルに対応し、Codex、Claude Code、OpenCode など主要な AI コーディングツールにシームレスに接続できます。1 日あたり数千億トークン規模の利用を支える企業向けの安定性を備え、国内外の事業主体間の決済や請求書発行にも対応しています。AxonHub ユーザー限定特典として、<a href="https://lj.s.gy/Wo8IuN" target="_blank">専用リンクからサブスクリプションを購入</a>すると、わずか 1.99 ドルで 50 ドル相当の Coding Plan クレジットを利用できます。紹介報酬にも対応しており、友人の購入で最大 20% のコミッションを獲得できます。
+      </td>
+    </tr>
+    <tr>
+      <td align="center" valign="middle">
+        <a href="https://bloome.im/app?ref=MjgMzmCY&utm_medium=github&utm_source=looplj-axonhub-ivor-202606" target="_blank">
           <img src="docs/sponsors/bloome.png" alt="Bloome" height="90"/>
           <br/>
           <strong>Bloome</strong>
@@ -62,7 +105,7 @@ Atlas Cloud の <a href="https://lj.s.gy/jknt2V" target="_blank">新しいコー
       </td>
       <td valign="middle">
         AxonHub をローカルセットアップなしで試すなら、Bloome で：
-        <a href="https://bloome.im/agent/join/WchosTFN?ref=MjgMzmCY" target="_blank">Quick start</a>、
+        <a href="https://bloome.im/app?ref=MjgMzmCY&utm_medium=github&utm_source=looplj-axonhub-ivor-202606" target="_blank">Quick start</a>、
         ブラウザやスマートフォンからワンクリックで起動でき、チームにも簡単に共有できます。
       </td>
     </tr>

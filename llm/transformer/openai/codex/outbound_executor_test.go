@@ -72,6 +72,43 @@ func TestCodexOutbound_StreamAcceptHeader(t *testing.T) {
 	assert.Equal(t, "Bearer "+accessToken, headers.Get("Authorization"))
 }
 
+func TestCodexOutbound_RejectsPassThroughBodyWithTokenLimitFields(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "max_output_tokens", body: `{"model":"gpt-5.4-mini","input":"hi","stream":true,"max_output_tokens":12000}`},
+		{name: "max_completion_tokens", body: `{"model":"gpt-5.4-mini","input":"hi","stream":true,"max_completion_tokens":12000}`},
+		{name: "max_tokens", body: `{"model":"gpt-5.4-mini","input":"hi","stream":true,"max_tokens":12000}`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			outbound := &OutboundTransformer{}
+			llmReq := &llm.Request{
+				APIFormat: llm.APIFormatOpenAIResponse,
+				RawRequest: &httpclient.Request{
+					Body: []byte(tt.body),
+				},
+			}
+
+			require.False(t, outbound.AllowPassThroughBody(context.Background(), llmReq, &httpclient.Request{}))
+		})
+	}
+}
+
+func TestCodexOutbound_AllowsPassThroughBodyWithoutTokenLimitFields(t *testing.T) {
+	outbound := &OutboundTransformer{}
+	llmReq := &llm.Request{
+		APIFormat: llm.APIFormatOpenAIResponse,
+		RawRequest: &httpclient.Request{
+			Body: []byte(`{"model":"gpt-5.4-mini","input":"hi","stream":true}`),
+		},
+	}
+
+	require.True(t, outbound.AllowPassThroughBody(context.Background(), llmReq, &httpclient.Request{}))
+}
+
 func TestCodexOutbound_StreamAllowsDownstreamIdentityOverrides(t *testing.T) {
 	ctx := context.Background()
 	accessToken := testAccessTokenWithAccountID(t)
@@ -515,6 +552,43 @@ func TestCodexOutbound_ForcesArrayInputsForSingleMessage(t *testing.T) {
 	require.True(t, ok, "first input item should be a map, got %T", inputSlice[0])
 	assert.Equal(t, "message", first["type"])
 	assert.Equal(t, "user", first["role"])
+}
+
+func TestCodexOutbound_PreservesResponsesLiteRequirements(t *testing.T) {
+	ctx := context.Background()
+	outbound := newTestCodexOutbound(t)
+	headers := make(http.Header)
+	headers.Set("Content-Type", "application/json")
+	headers.Set(responses.ResponsesLiteHeader, "true")
+	inboundRequest := &httpclient.Request{
+		Headers: headers,
+		Body: []byte(`{
+			"model": "gpt-5.6-sol",
+			"input": "Hello",
+			"stream": true,
+			"parallel_tool_calls": false,
+			"reasoning": {
+				"effort": "xhigh",
+				"context": "all_turns"
+			}
+		}`),
+	}
+
+	llmRequest, err := responses.NewInboundTransformer().TransformRequest(ctx, inboundRequest)
+	require.NoError(t, err)
+	llmRequest.RawRequest = inboundRequest
+
+	outboundRequest, err := outbound.TransformRequest(ctx, llmRequest)
+	require.NoError(t, err)
+	outboundRequest = httpclient.MergeInboundRequest(outboundRequest, inboundRequest)
+
+	assert.Equal(t, "true", outboundRequest.Headers.Get(responses.ResponsesLiteHeader))
+
+	body := decodeCodexRequestBody(t, outboundRequest)
+	assert.Equal(t, false, body["parallel_tool_calls"])
+	reasoning, ok := body["reasoning"].(map[string]any)
+	require.True(t, ok)
+	assert.Equal(t, "all_turns", reasoning["context"])
 }
 
 func newTestCodexOutbound(t *testing.T) *OutboundTransformer {
