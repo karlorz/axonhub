@@ -44,16 +44,25 @@
       </p>
     </td>
     <td width="50%" align="center" valign="top">
-      <a href="https://lj.s.gy/jKk8uU" target="_blank">
-        <img src="https://raw.githubusercontent.com/Krill-ai-org/krill-ai-static/refs/heads/main/krill-logo/Eng/250x150.png" alt="Krill AI" height="50"/>
+      <a href="https://lj.s.gy/DUq59H" target="_blank">
+        <img src="https://www.infistar.cc/logo.png" alt="無限星河 Infistar.cc" height="50"/>
         <br/>
-        <strong>Krill AI</strong>
+        <strong>無限星河 Infistar.cc</strong>
       </a>
-      <p align="left">
-        本プロジェクトを支援いただいている Krill AI に感謝します。Krill は GPT、Claude、Gemini および多数の中国国内モデル向けに、公式かつ安定した高速 API 中継サービスを提供しています。エンタープライズ向けカスタマイズ、請求書発行、1日16時間・週7日の専用技術サポートに対応しています。独自に最適化された WebSocket 接続により、最初のトークンをより速く受け取れます。
+      <p align="center">
+        <a href="https://lj.s.gy/DUq59H" target="_blank">
+          <img src="docs/sponsors/infistar-banner.png" alt="Infistar.cc 無限星河" width="100%"/>
+        </a>
       </p>
       <p align="left">
-        <a href="https://lj.s.gy/jKk8uU" target="_blank">このリンク</a> から登録し、チャージ時に <code>AxonHub</code> クーポンコードを入力すると、初回の Codex プラン購入が 23% オフになります。
+        <strong>AxonHub × Infistar.cc 無限星河｜高可用な全モデル API · 次世代 AI ゲートウェイとマルチチャネルルーティングを支援</strong><br/><br/>
+        Infistar.cc 無限星河による本プロジェクトへのご支援に感謝します！
+      </p>
+      <p align="left">
+        ⚡ エンタープライズ級の高い同時実行性能と安定したスケジューリング：公式価格の 1 割から利用でき、モデル倍率も公開・透明です。ミリ秒級の応答で AxonHub のインテリジェントルーティングとフェイルオーバーに最適化されています。高可用性チャネルとマルチノード冗長バックアップにより、レート制限、429、接続切断の問題を解消します；<br/>
+        🧠 トップモデルを全面サポート：ChatGPT、Claude、Gemini、Kimi、GLM、DeepSeek など主要モデル全般に対応し、Claude Code、Codex、OpenCode などの AI プログラミングおよび Agent 開発ツールもネイティブサポートします。<br/>
+        🎨 マルチモーダルと最先端エコシステムへの接続：テキスト対話やコード生成だけでなく、主要な画像生成、動画、Embedding、Rerank モデルにもワンストップで接続でき、1 つの上流チャネルでゲートウェイのマルチモーダル配信ニーズに対応します。<br/>
+        🎁 AxonHub ユーザー限定特典：<a href="https://lj.s.gy/DUq59H" target="_blank">専用リンク</a>から登録すると、[専用付与クレジット / 初回チャージ特典]を受け取れます。すぐに利用でき、ゲートウェイのテストにも簡単に接続できます！
       </p>
     </td>
   </tr>
@@ -113,14 +122,6 @@
 </table>
 
 ---
-
-## 💖 サポート
-
-| プロバイダー | プラン | 説明 | リンク |
-|-------------|--------|------|--------|
-| Zhipu AI | GLM CODING PLAN | GLM Coding Plan にご招待いただけます！Claude Code、Clineなど10以上のトップコーディングツールを完全サポート — 月$3から。今すぐサブスクリプションで期間限定特典をゲット！ | [English](https://z.ai/subscribe?ic=OKAF5UFZOM) / [中文](https://www.bigmodel.cn/glm-coding?ic=WIDLV0OOTJ) |
-| Volcengine | CODING PLAN | Ark Coding Plan はDoubao、GLM、DeepSeek、Kimiなどのモデルをサポート。無制限のツールと互換性あり。今すぐサブスクリプションで追加10%オフ — 月$1.2から。購入が多いほどお得に！ | [リンク](https://volcengine.com/L/1Q-HZr5Uvk8/) / コード：LXKDZK3W |
-| Cursor | PRO PLAN | 初月のCursor Pro、Pro+、Ultraを50%オフでお申し込み。 | [招待リンク](https://cursor.com/referral?code=GV0YKBQ692X1) |
 
 ---
 
@@ -415,15 +416,19 @@ AXONHUB_LOG_LEVEL=info
 git clone https://github.com/looplj/axonhub.git
 cd axonhub
 
-# 環境変数を設定
-export AXONHUB_DB_DIALECT="tidb"
-export AXONHUB_DB_DSN="<USER>.root:<PASSWORD>@tcp(gateway01.us-west-2.prod.aws.tidbcloud.com:4000)/axonhub?tls=true&parseTime=true&multiStatements=true&charset=utf8mb4"
+# ローカル環境ファイルを作成（イメージの digest とパスワードを置き換えてください）
+umask 077
+cat > .env <<'EOF'
+DB_PASSWORD=replace-with-a-long-random-password
+AXONHUB_IMAGE=looplj/axonhub@sha256:replace-with-axonhub-digest
+POSTGRES_IMAGE=postgres@sha256:replace-with-postgres-digest
+EOF
 
 # サービスを開始
-docker-compose up -d
+docker compose --env-file .env up -d
 
 # ステータスを確認
-docker-compose ps
+docker compose ps
 ```
 
 #### Helm Kubernetesデプロイ

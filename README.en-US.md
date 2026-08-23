@@ -44,16 +44,25 @@
       </p>
     </td>
     <td width="50%" align="center" valign="top">
-      <a href="https://lj.s.gy/jKk8uU" target="_blank">
-        <img src="https://raw.githubusercontent.com/Krill-ai-org/krill-ai-static/refs/heads/main/krill-logo/Eng/250x150.png" alt="Krill AI" height="50"/>
+      <a href="https://lj.s.gy/DUq59H" target="_blank">
+        <img src="https://www.infistar.cc/logo.png" alt="无限星河 Infistar.cc" height="50"/>
         <br/>
-        <strong>Krill AI</strong>
+        <strong>无限星河 Infistar.cc</strong>
       </a>
-      <p align="left">
-        Thank you to Krill AI for sponsoring this project. Krill provides official, stable, high-speed API relay services for GPT, Claude, Gemini, and a wide range of Chinese models, with enterprise customization, invoicing support, and dedicated technical support 16 hours a day, 7 days a week. Its optimized WebSocket connection can deliver a faster time to first token.
+      <p align="center">
+        <a href="https://lj.s.gy/DUq59H" target="_blank">
+          <img src="docs/sponsors/infistar-banner.png" alt="Infistar.cc 无限星河" width="100%"/>
+        </a>
       </p>
       <p align="left">
-        Register through <a href="https://lj.s.gy/jKk8uU" target="_blank">this link</a> and enter the <code>AxonHub</code> coupon code when topping up to receive 23% off your first Codex plan purchase.
+        <strong>AxonHub × Infistar.cc 无限星河 | High-Availability Full-Model API · Empowering the Next Generation of AI Gateways and Multi-Channel Routing</strong><br/><br/>
+        Thank you to Infistar.cc 无限星河 for sponsoring this project!
+      </p>
+      <p align="left">
+        ⚡ Enterprise-grade high concurrency and stable scheduling: Prices as low as 10% of official rates, transparent model multipliers, and millisecond-level response times that fit AxonHub's intelligent routing and failover mechanisms perfectly. High-availability channels and redundant multi-node backups help eliminate rate limits, 429s, and disconnections;<br/>
+        🧠 Comprehensive support for top models: Deeply adapted for ChatGPT, Claude, Gemini, Kimi, GLM, DeepSeek, and the full range of mainstream models, with native support for Claude Code, Codex, OpenCode, and other AI programming and Agent development tools.<br/>
+        🎨 Multimodal and cutting-edge ecosystem access: Beyond text conversations and code generation, it provides one-stop access to mainstream image generation, video, Embedding, and Rerank models, allowing a single upstream channel to meet the gateway's multimodal distribution needs.<br/>
+        🎁 Exclusive benefits for AxonHub users: Register through the <a href="https://lj.s.gy/DUq59H" target="_blank">exclusive link</a> to receive [exclusive gifted credits / first recharge offer], ready to use immediately with zero-barrier gateway testing!
       </p>
     </td>
   </tr>
@@ -411,15 +420,19 @@ For detailed configuration instructions, please refer to [configuration document
 git clone https://github.com/looplj/axonhub.git
 cd axonhub
 
-# Set environment variables
-export AXONHUB_DB_DIALECT="tidb"
-export AXONHUB_DB_DSN="<USER>.root:<PASSWORD>@tcp(gateway01.us-west-2.prod.aws.tidbcloud.com:4000)/axonhub?tls=true&parseTime=true&multiStatements=true&charset=utf8mb4"
+# Create a local environment file (replace image digests and password)
+umask 077
+cat > .env <<'EOF'
+DB_PASSWORD=replace-with-a-long-random-password
+AXONHUB_IMAGE=looplj/axonhub@sha256:replace-with-axonhub-digest
+POSTGRES_IMAGE=postgres@sha256:replace-with-postgres-digest
+EOF
 
 # Start services
-docker-compose up -d
+docker compose --env-file .env up -d
 
 # Check status
-docker-compose ps
+docker compose ps
 ```
 
 #### Helm Kubernetes Deployment
